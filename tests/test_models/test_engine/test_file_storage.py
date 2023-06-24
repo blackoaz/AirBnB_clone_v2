@@ -1,109 +1,147 @@
 #!/usr/bin/python3
-""" Module for testing file storage"""
-import unittest
-from models.base_model import BaseModel
-from models import storage
+"""A unit test module for the console (command interpreter).
+"""
+import json
+import MySQLdb
 import os
+import sqlalchemy
+import unittest
+from io import StringIO
+from unittest.mock import patch
+
+from console import HBNBCommand
+from models import storage
+from models.base_model import BaseModel
+from models.user import User
+from tests import clear_stream
 
 
-class test_fileStorage(unittest.TestCase):
-    """ Class to test the file storage method """
+class TestHBNBCommand(unittest.TestCase):
+    """Represents the test class for the HBNBCommand class.
+    """
+    @unittest.skipIf(
+        os.getenv('HBNB_TYPE_STORAGE') == 'db', 'FileStorage test')
+    def test_fs_create(self):
+        """Tests the create command with the file storage.
+        """
+        with patch('sys.stdout', new=StringIO()) as cout:
+            cons = HBNBCommand()
+            cons.onecmd('create City name="Texas"')
+            mdl_id = cout.getvalue().strip()
+            clear_stream(cout)
+            self.assertIn('City.{}'.format(mdl_id), storage.all().keys())
+            cons.onecmd('show City {}'.format(mdl_id))
+            self.assertIn("'name': 'Texas'", cout.getvalue().strip())
+            clear_stream(cout)
+            cons.onecmd('create User name="James" age=17 height=5.9')
+            mdl_id = cout.getvalue().strip()
+            self.assertIn('User.{}'.format(mdl_id), storage.all().keys())
+            clear_stream(cout)
+            cons.onecmd('show User {}'.format(mdl_id))
+            self.assertIn("'name': 'James'", cout.getvalue().strip())
+            self.assertIn("'age': 17", cout.getvalue().strip())
+            self.assertIn("'height': 5.9", cout.getvalue().strip())
 
-    def setUp(self):
-        """ Set up test environment """
-        del_list = []
-        for key in storage._FileStorage__objects.keys():
-            del_list.append(key)
-        for key in del_list:
-            del storage._FileStorage__objects[key]
+    @unittest.skipIf(
+        os.getenv('HBNB_TYPE_STORAGE') != 'db', 'DBStorage test')
+    def test_db_create(self):
+        """Tests the create command with the database storage.
+        """
+        with patch('sys.stdout', new=StringIO()) as cout:
+            cons = HBNBCommand()
+            # creating a model with non-null attribute(s)
+            with self.assertRaises(sqlalchemy.exc.OperationalError):
+                cons.onecmd('create User')
+            # creating a User instance
+            clear_stream(cout)
+            cons.onecmd('create User email="john25@gmail.com" password="123"')
+            mdl_id = cout.getvalue().strip()
+            dbc = MySQLdb.connect(
+                host=os.getenv('HBNB_MYSQL_HOST'),
+                port=3306,
+                user=os.getenv('HBNB_MYSQL_USER'),
+                passwd=os.getenv('HBNB_MYSQL_PWD'),
+                db=os.getenv('HBNB_MYSQL_DB')
+            )
+            cursor = dbc.cursor()
+            cursor.execute('SELECT * FROM users WHERE id="{}"'.format(mdl_id))
+            result = cursor.fetchone()
+            self.assertTrue(result is not None)
+            self.assertIn('john25@gmail.com', result)
+            self.assertIn('123', result)
+            cursor.close()
+            dbc.close()
 
-    def tearDown(self):
-        """ Remove storage file at end of tests """
-        try:
-            os.remove('file.json')
-        except:
-            pass
+    @unittest.skipIf(
+        os.getenv('HBNB_TYPE_STORAGE') != 'db', 'DBStorage test')
+    def test_db_show(self):
+        """Tests the show command with the database storage.
+        """
+        with patch('sys.stdout', new=StringIO()) as cout:
+            cons = HBNBCommand()
+            # showing a User instance
+            obj = User(email="john25@gmail.com", password="123")
+            dbc = MySQLdb.connect(
+                host=os.getenv('HBNB_MYSQL_HOST'),
+                port=3306,
+                user=os.getenv('HBNB_MYSQL_USER'),
+                passwd=os.getenv('HBNB_MYSQL_PWD'),
+                db=os.getenv('HBNB_MYSQL_DB')
+            )
+            cursor = dbc.cursor()
+            cursor.execute('SELECT * FROM users WHERE id="{}"'.format(obj.id))
+            result = cursor.fetchone()
+            self.assertTrue(result is None)
+            cons.onecmd('show User {}'.format(obj.id))
+            self.assertEqual(
+                cout.getvalue().strip(),
+                '** no instance found **'
+            )
+            obj.save()
+            dbc = MySQLdb.connect(
+                host=os.getenv('HBNB_MYSQL_HOST'),
+                port=3306,
+                user=os.getenv('HBNB_MYSQL_USER'),
+                passwd=os.getenv('HBNB_MYSQL_PWD'),
+                db=os.getenv('HBNB_MYSQL_DB')
+            )
+            cursor = dbc.cursor()
+            cursor.execute('SELECT * FROM users WHERE id="{}"'.format(obj.id))
+            clear_stream(cout)
+            cons.onecmd('show User {}'.format(obj.id))
+            result = cursor.fetchone()
+            self.assertTrue(result is not None)
+            self.assertIn('john25@gmail.com', result)
+            self.assertIn('123', result)
+            self.assertIn('john25@gmail.com', cout.getvalue())
+            self.assertIn('123', cout.getvalue())
+            cursor.close()
+            dbc.close()
 
-    def test_obj_list_empty(self):
-        """ __objects is initially empty """
-        self.assertEqual(len(storage.all()), 0)
-
-    def test_new(self):
-        """ New object is correctly added to __objects """
-        new = BaseModel()
-        for obj in storage.all().values():
-            temp = obj
-        self.assertTrue(temp is obj)
-
-    def test_all(self):
-        """ __objects is properly returned """
-        new = BaseModel()
-        temp = storage.all()
-        self.assertIsInstance(temp, dict)
-
-    def test_base_model_instantiation(self):
-        """ File is not created on BaseModel save """
-        new = BaseModel()
-        self.assertFalse(os.path.exists('file.json'))
-
-    def test_empty(self):
-        """ Data is saved to file """
-        new = BaseModel()
-        thing = new.to_dict()
-        new.save()
-        new2 = BaseModel(**thing)
-        self.assertNotEqual(os.path.getsize('file.json'), 0)
-
-    def test_save(self):
-        """ FileStorage save method """
-        new = BaseModel()
-        storage.save()
-        self.assertTrue(os.path.exists('file.json'))
-
-    def test_reload(self):
-        """ Storage file is successfully loaded to __objects """
-        new = BaseModel()
-        storage.save()
-        storage.reload()
-        for obj in storage.all().values():
-            loaded = obj
-        self.assertEqual(new.to_dict()['id'], loaded.to_dict()['id'])
-
-    def test_reload_empty(self):
-        """ Load from an empty file """
-        with open('file.json', 'w') as f:
-            pass
-        with self.assertRaises(ValueError):
-            storage.reload()
-
-    def test_reload_from_nonexistent(self):
-        """ Nothing happens if file does not exist """
-        self.assertEqual(storage.reload(), None)
-
-    def test_base_model_save(self):
-        """ BaseModel save method calls storage save """
-        new = BaseModel()
-        new.save()
-        self.assertTrue(os.path.exists('file.json'))
-
-    def test_type_path(self):
-        """ Confirm __file_path is string """
-        self.assertEqual(type(storage._FileStorage__file_path), str)
-
-    def test_type_objects(self):
-        """ Confirm __objects is a dict """
-        self.assertEqual(type(storage.all()), dict)
-
-    def test_key_format(self):
-        """ Key is properly formatted """
-        new = BaseModel()
-        _id = new.to_dict()['id']
-        for key in storage.all().keys():
-            temp = key
-        self.assertEqual(temp, 'BaseModel' + '.' + _id)
-
-    def test_storage_var_created(self):
-        """ FileStorage object storage created """
-        from models.engine.file_storage import FileStorage
-        print(type(storage))
-        self.assertEqual(type(storage), FileStorage)
+    @unittest.skipIf(
+        os.getenv('HBNB_TYPE_STORAGE') != 'db', 'DBStorage test')
+    def test_db_count(self):
+        """Tests the count command with the database storage.
+        """
+        with patch('sys.stdout', new=StringIO()) as cout:
+            cons = HBNBCommand()
+            dbc = MySQLdb.connect(
+                host=os.getenv('HBNB_MYSQL_HOST'),
+                port=3306,
+                user=os.getenv('HBNB_MYSQL_USER'),
+                passwd=os.getenv('HBNB_MYSQL_PWD'),
+                db=os.getenv('HBNB_MYSQL_DB')
+            )
+            cursor = dbc.cursor()
+            cursor.execute('SELECT COUNT(*) FROM states;')
+            res = cursor.fetchone()
+            prev_count = int(res[0])
+            cons.onecmd('create State name="Enugu"')
+            clear_stream(cout)
+            cons.onecmd('count State')
+            cnt = cout.getvalue().strip()
+            self.assertEqual(int(cnt), prev_count + 1)
+            clear_stream(cout)
+            cons.onecmd('count State')
+            cursor.close()
+            dbc.close()
