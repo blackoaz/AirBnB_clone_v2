@@ -6,8 +6,8 @@ import shlex
 import os
 
 
-env.hosts = ['	100.26.18.154', '54.175.95.164']
-env.user = "ubuntu"
+env.hosts = ['100.26.18.154', '54.175.95.164']
+env.user = "newuser"
 
 
 def do_deploy(archive_path):
