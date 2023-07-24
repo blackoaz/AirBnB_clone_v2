@@ -33,7 +33,7 @@ def python_text(text='is cool'):
     return 'Python %s' % text
 
 
-@app.route(/number/<int:n>, strict_slashes=False)
+@app.route('/number/<int:n>', strict_slashes=False)
 def number(n):
     """Checks if an input is a number"""
     return "%d is a number" % n
