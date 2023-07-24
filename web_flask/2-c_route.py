@@ -21,7 +21,7 @@ def hbnb():
 @app.route('/c/<text>', strict_slashes=False)
 def c_text(text):
     """"passing path with a text """
-    return 'C %s' % text.replace('_', '')
+    return 'C %s' % text.replace('_', ' ')
 
 
 if __name__ == "__main__":
